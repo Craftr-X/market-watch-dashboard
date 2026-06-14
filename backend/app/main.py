@@ -3,11 +3,11 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.app.config import DISCLAIMER
-from backend.app.data_source import load_market_data
-from backend.app.reporting import build_daily_report, market_temperature
-from backend.app.scoring import score_strong_stocks
-from backend.app.storage import MarketStore
+from app.config import DISCLAIMER
+from app.data_source import load_market_data
+from app.reporting import build_daily_report, market_temperature
+from app.scoring import score_strong_stocks
+from app.storage import MarketStore
 
 
 def envelope(data, updated_at: str | None, source: str | None) -> dict:

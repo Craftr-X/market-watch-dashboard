@@ -1,4 +1,4 @@
-from backend.app.scoring import score_strong_stocks
+from app.scoring import score_strong_stocks
 
 
 def test_scores_prioritize_liquidity_sector_strength_and_penalize_risk():

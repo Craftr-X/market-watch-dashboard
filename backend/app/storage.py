@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
-from backend.app.config import DEFAULT_DB_PATH
+from app.config import DEFAULT_DB_PATH
 
 
 def database_path(database_url: str | None = None) -> Path:
