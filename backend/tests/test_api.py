@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 
-from backend.app.main import create_app
+from app.main import create_app
 
 
 def test_api_responses_include_metadata_and_disclaimer(tmp_path):
