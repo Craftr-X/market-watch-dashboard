@@ -17,7 +17,7 @@ def test_api_responses_include_metadata_and_disclaimer(tmp_path):
     assert response.status_code == 200
     assert body["data"]
     assert body["updated_at"]
-    assert body["source"] == "sample-akshare-compatible"
+    assert body["source"] == "akshare"
     assert "不构成投资建议" in body["risk_disclaimer"]
     assert {"code", "name", "score", "risk_note"} <= set(body["data"][0])
 
