@@ -4,29 +4,37 @@
 
 ## 功能
 
-- 今日市场总览：上证指数、深证成指、创业板指、沪深300、中证A500、中证500
-- 板块热度：行业/概念涨幅、成交额和领涨样本
-- 强势观察：按涨幅、成交额、量比、板块强度和趋势计算观察分
-- 风险提醒：ST/退市风险、停牌/异常、近5日涨幅过高、成交额过低等标签
-- 每日复盘：自动生成市场状态、强势方向、观察样本和定投提醒
-- SQLite：每日刷新后保留历史记录
+- **实时行情数据**：获取 A 股主要指数、板块和个股数据（AkShare 数据源）
+- **板块热度分析**：行业板块涨跌幅排行
+- **强势股票观察**：基于评分算法筛选强势股 Top 20
+- **风险预警**：识别 ST、停牌、涨幅过高等风险股票
+- **每日复盘**：自动生成市场复盘摘要
+- **定时任务**：每个交易日 15:30 自动刷新数据
+- **SQLite 存储**：每日刷新后保留历史记录
 
-## 启动后端
+## 快速开始
 
-```bash
-python3 -m venv .venv
-. .venv/bin/activate
-pip install -r backend/requirements.txt
-uvicorn backend.app.main:app --reload --port 8000
-```
-
-手动刷新：
+### 方式一：使用启动脚本（Windows）
 
 ```bash
-curl -X POST http://127.0.0.1:8000/api/jobs/refresh
+# 启动后端
+start.bat
+
+# 新窗口启动前端
+start-frontend.bat
 ```
 
-## 启动前端
+### 方式二：手动启动
+
+#### 启动后端
+
+```bash
+cd backend
+pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8000
+```
+
+#### 启动前端
 
 ```bash
 cd frontend
@@ -34,35 +42,145 @@ npm install
 npm run dev
 ```
 
-浏览器访问：
+### 访问应用
 
-```text
-http://127.0.0.1:3000
-```
+- **前端页面**：http://localhost:3000
+- **API 文档**：http://localhost:8000/docs
+- **定时任务状态**：http://localhost:8000/api/scheduler/status
 
-## API
+## API 接口
 
-- `GET /api/market/overview`
-- `GET /api/sectors/rank`
-- `GET /api/stocks/strong`
-- `GET /api/stocks/risk`
-- `GET /api/reports/daily`
-- `POST /api/jobs/refresh`
+| 接口 | 方法 | 说明 |
+|------|------|------|
+| `/api/market/overview` | GET | 主要指数行情和市场状态 |
+| `/api/sectors/rank` | GET | 行业板块涨跌幅排行 |
+| `/api/stocks/strong` | GET | 强势股票 Top 20 |
+| `/api/stocks/risk` | GET | 风险股票列表 |
+| `/api/reports/daily` | GET | 每日复盘报告 |
+| `/api/jobs/refresh` | POST | 手动刷新数据 |
+| `/api/scheduler/status` | GET | 定时任务状态 |
 
 所有接口均返回：
 
 ```json
 {
   "data": {},
-  "updated_at": "2026-06-14T15:30:00",
-  "source": "sample-akshare-compatible",
+  "updated_at": "2026-06-15T15:30:00",
+  "source": "akshare",
   "risk_disclaimer": "本系统仅用于市场学习和行情复盘，不构成投资建议。个股观察不代表买入建议，投资需自行决策并承担风险。"
 }
 ```
 
-## 数据源说明
+## 数据源
 
-第一版代码保留了 AKShare/东方财富公开行情的接入位置，但为了本地首次运行稳定，当前默认使用 AKShare 兼容字段的样例数据生成 SQLite 记录。后续可在 `backend/app/data_source.py` 中替换为真实 AKShare 获取逻辑。
+使用 [AkShare](https://github.com/akfamily/akshare) 获取 A 股行情数据：
+
+- **指数数据**：新浪接口（stock_zh_index_spot_sina）
+- **板块数据**：新浪接口（stock_sector_spot）
+- **个股数据**：新浪接口（stock_zh_a_spot）
+
+### 定时任务
+
+默认配置：每个交易日 15:30 自动刷新（北京时间）
+
+查看定时任务状态：
+```bash
+curl http://127.0.0.1:8000/api/scheduler/status
+```
+
+手动刷新：
+```bash
+curl -X POST http://127.0.0.1:8000/api/jobs/refresh
+```
+
+## 项目结构
+
+```
+market-watch-dashboard/
+├── backend/
+│   ├── app/
+│   │   ├── __init__.py
+│   │   ├── config.py          # 配置文件
+│   │   ├── data_source.py     # 数据源（AkShare）
+│   │   ├── main.py            # FastAPI 应用
+│   │   ├── reporting.py       # 报告生成
+│   │   ├── scheduler.py       # 定时任务
+│   │   ├── scoring.py         # 评分算法
+│   │   └── storage.py         # 数据存储（SQLite）
+│   ├── tests/
+│   ├── data/                  # 数据库文件
+│   ├── requirements.txt
+│   └── USAGE.md               # 详细使用指南
+├── frontend/
+│   ├── app/
+│   │   ├── layout.tsx
+│   │   ├── page.tsx
+│   │   └── styles.css
+│   ├── package.json
+│   └── tsconfig.json
+├── docs/
+├── start.bat                  # 后端启动脚本
+├── start-frontend.bat         # 前端启动脚本
+└── README.md
+```
+
+## 评分算法
+
+强势股票评分基于以下维度：
+
+| 维度 | 权重 | 说明 |
+|------|------|------|
+| 涨跌幅 | 30% | 当日涨幅越高，得分越高 |
+| 成交额 | 20% | 成交额越大，流动性越好 |
+| 量比 | 20% | 量比越高，资金关注度越高 |
+| 板块强度 | 20% | 所属板块涨幅越高，加分越多 |
+| 趋势突破 | 10% | 突破关键位置加分 |
+
+风险惩罚：
+- ST 股票：-65 分
+- 停牌股票：-35 分
+- 近 5 日涨幅过高：-15 分
+- 成交额过低：-18 分
+- 高位放量下跌：-20 分
+
+## 注意事项
+
+1. **数据延迟**：新浪接口有 15-30 秒延迟，非 Level 2 实时数据
+2. **网络环境**：需要稳定的网络连接访问数据源
+3. **交易时间**：非交易时间获取的是上一个交易日的数据
+4. **风险提示**：本系统仅用于学习和复盘，不构成投资建议
+
+## 常见问题
+
+### Q: 数据获取失败怎么办？
+
+A: 检查网络连接，确保能访问新浪财经。如果网络受限，可能需要配置代理。
+
+### Q: 如何修改定时任务时间？
+
+A: 编辑 `backend/app/scheduler.py` 中的 CronTrigger 参数。
+
+### Q: 如何添加更多指数？
+
+A: 编辑 `backend/app/data_source.py` 中的 `TRACKED_INDICES` 字典。
+
+### Q: 数据存储在哪里？
+
+A: 默认存储在 `backend/data/market_watch.db`（SQLite 数据库）
+
+## 更新日志
+
+### v0.2.0 (2026-06-15)
+- ✅ 集成 AkShare 真实数据源
+- ✅ 添加定时任务调度器（每个交易日 15:30 自动刷新）
+- ✅ 优化错误处理和重试机制
+- ✅ 新增定时任务状态 API
+- ✅ 更新使用文档
+
+### v0.1.0 (2026-06-14)
+- 初始版本
+- 基础架构搭建
+- 示例数据展示
 
 ## 风险边界
 
