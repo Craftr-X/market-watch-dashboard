@@ -6,12 +6,16 @@ import {
   BarChart3,
   Database,
   RefreshCw,
+  Search,
   ShieldAlert,
   Signal,
   TrendingUp,
   Zap,
 } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+
+import SearchModal from "@/components/SearchModal";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://127.0.0.1:8000";
 
@@ -98,6 +102,7 @@ export default function Page() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [showSearch, setShowSearch] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -164,6 +169,10 @@ export default function Page() {
             <Activity size={15} />
             <span>{updatedAt}</span>
           </div>
+          <button className="refresh" onClick={() => setShowSearch(true)} title="搜索股票" aria-label="搜索股票">
+            <Search size={18} />
+            搜索
+          </button>
           <button className="refresh" onClick={refresh} disabled={loading} title="刷新行情">
             <RefreshCw size={18} className={loading ? "spin" : ""} />
             {loading ? "同步中" : "刷新行情"}
@@ -278,7 +287,11 @@ export default function Page() {
               {data?.strong.data.map((stock, index) => (
                 <tr key={stock.code}>
                   <td><span className="rank">{index + 1}</span></td>
-                  <td className="codeCell">{stock.code}</td>
+                  <td className="codeCell">
+                    <Link href={`/stock/${stock.code}?period=daily&adjust=qfq`} className="stockCodeLink">
+                      {stock.code}
+                    </Link>
+                  </td>
                   <td><span className="nameCell">{stock.name}</span></td>
                   <td className={pctClass(stock.change_pct)}>{cnPct(stock.change_pct)}</td>
                   <td>{money(stock.turnover)}</td>
@@ -304,6 +317,8 @@ export default function Page() {
           </div>
         </div>
       </Panel>
+
+      {showSearch && <SearchModal onClose={() => setShowSearch(false)} />}
     </main>
   );
 }

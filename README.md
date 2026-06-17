@@ -9,6 +9,9 @@
 - **强势股票观察**：基于评分算法筛选强势股 Top 20
 - **风险预警**：识别 ST、停牌、涨幅过高等风险股票
 - **每日复盘**：自动生成市场复盘摘要
+- **个股历史走势**：K 线图 + 均线叠加 + 成交量副图，支持日/周/月线切换、前复权/不复权（v0.3.0 新增）
+- **股票搜索**：支持代码/名称模糊搜索（v0.3.0 新增）
+- **自选股收藏**：本地收藏常用股票（v0.3.0 新增）
 - **定时任务**：每个交易日 15:30 自动刷新数据
 - **SQLite 存储**：每日刷新后保留历史记录
 
@@ -59,6 +62,8 @@ npm run dev
 | `/api/reports/daily` | GET | 每日复盘报告 |
 | `/api/jobs/refresh` | POST | 手动刷新数据 |
 | `/api/scheduler/status` | GET | 定时任务状态 |
+| `/api/stocks/history` | GET | 个股历史行情（K线，支持日/周/月线、前复权/不复权） |
+| `/api/stocks/search` | GET | 股票代码/名称模糊搜索 |
 
 所有接口均返回：
 
@@ -102,11 +107,13 @@ market-watch-dashboard/
 │   │   ├── __init__.py
 │   │   ├── config.py          # 配置文件
 │   │   ├── data_source.py     # 数据源（AkShare）
+│   │   ├── history.py         # 个股历史行情服务（v0.3.0 新增）
 │   │   ├── main.py            # FastAPI 应用
 │   │   ├── reporting.py       # 报告生成
-│   │   ├── scheduler.py       # 定时任务
+│   │   ├── scheduler.py       # 定时任务（含缓存预热 v0.3.0）
 │   │   ├── scoring.py         # 评分算法
-│   │   └── storage.py         # 数据存储（SQLite）
+│   │   ├── search.py          # 股票搜索服务（v0.3.0 新增）
+│   │   └── storage.py         # 数据存储（SQLite，含 history/info 表 v0.3.0）
 │   ├── tests/
 │   ├── data/                  # 数据库文件
 │   ├── requirements.txt
@@ -114,8 +121,26 @@ market-watch-dashboard/
 ├── frontend/
 │   ├── app/
 │   │   ├── layout.tsx
-│   │   ├── page.tsx
-│   │   └── styles.css
+│   │   ├── page.tsx           # 首页
+│   │   ├── styles.css
+│   │   ├── components/         # 通用组件
+│   │   │   ├── KlineChart.tsx        # K线图（v0.3.0）
+│   │   │   ├── VolumeChart.tsx       # 成交量副图（v0.3.0）
+│   │   │   ├── StockHeader.tsx        # 个股头部（v0.3.0）
+│   │   │   ├── StockToolbar.tsx      # 工具栏（v0.3.0）
+│   │   │   ├── StatsPanel.tsx         # 统计面板（v0.3.0）
+│   │   │   ├── SearchModal.tsx        # 搜索弹层（v0.3.0）
+│   │   │   ├── WatchlistButton.tsx    # 收藏按钮（v0.3.0）
+│   │   │   └── ErrorCard.tsx          # 错误卡片（v0.3.0）
+│   │   ├── hooks/
+│   │   │   ├── useStockHistory.ts     # 历史数据 hook（v0.3.0）
+│   │   │   └── useSearch.ts           # 搜索 hook（v0.3.0）
+│   │   ├── store/
+│   │   │   └── watchlist.ts           # Zustand 自选股（v0.3.0）
+│   │   ├── utils/
+│   │   │   └── ma.ts                 # 均线计算（v0.3.0）
+│   │   └── stock/[code]/
+│   │       └── page.tsx              # 个股详情页（v0.3.0 新路由）
 │   ├── package.json
 │   └── tsconfig.json
 ├── docs/
@@ -169,6 +194,21 @@ A: 编辑 `backend/app/data_source.py` 中的 `TRACKED_INDICES` 字典。
 A: 默认存储在 `backend/data/market_watch.db`（SQLite 数据库）
 
 ## 更新日志
+
+### v0.3.0 (2026-06-17)
+- ✅ 新增个股历史走势分析：K 线图 + 成交量副图 + MA5/10/20/60 均线
+- ✅ 支持日线/周线/月线三周期切换
+- ✅ 支持前复权/不复权一键切换
+- ✅ 新增股票搜索（代码/名称模糊搜索）
+- ✅ 新增自选股收藏（localStorage 持久化）
+- ✅ 新增 `stock_history` / `stock_info` SQLite 表
+- ✅ 新增 `/api/stocks/history` 和 `/api/stocks/search` API
+- ✅ 新增定时缓存预热任务（周线/月线/股票列表同步）
+- ✅ 新增后端单元测试（`tests/test_history.py`）
+- ✅ 前端新增 `lightweight-charts` 图表库
+- ✅ 新增 Zustand 状态管理（自选股）
+- ✅ 更新 `tsconfig.json` 路径别名 `@/*`
+- ✅ `npm run build` 通过，无 TypeScript 错误
 
 ### v0.2.0 (2026-06-15)
 - ✅ 集成 AkShare 真实数据源
