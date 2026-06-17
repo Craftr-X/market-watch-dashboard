@@ -33,6 +33,7 @@ class MarketStore:
         with self.connect() as conn:
             conn.executescript(
                 """
+                -- === 现有表（保持不变）===
                 CREATE TABLE IF NOT EXISTS market_snapshot (
                     date TEXT NOT NULL,
                     index_code TEXT NOT NULL,
@@ -87,6 +88,36 @@ class MarketStore:
                     updated_at TEXT NOT NULL,
                     source TEXT NOT NULL
                 );
+
+                -- === 新增：个股历史行情表 ===
+                CREATE TABLE IF NOT EXISTS stock_history (
+                    code        TEXT    NOT NULL,
+                    period      TEXT    NOT NULL,
+                    adjust      TEXT    NOT NULL,
+                    trade_date  TEXT    NOT NULL,
+                    open        REAL    NOT NULL,
+                    high        REAL    NOT NULL,
+                    low         REAL    NOT NULL,
+                    close       REAL    NOT NULL,
+                    volume      INTEGER NOT NULL,
+                    amount      REAL    NOT NULL,
+                    turnover    REAL    NOT NULL,
+                    updated_at  TEXT    NOT NULL,
+                    source      TEXT    NOT NULL DEFAULT 'akshare',
+                    PRIMARY KEY (code, period, adjust, trade_date)
+                );
+                CREATE INDEX IF NOT EXISTS idx_history_lookup
+                    ON stock_history(code, period, adjust, trade_date DESC);
+
+                -- === 新增：股票基础信息表（用于搜索）===
+                CREATE TABLE IF NOT EXISTS stock_info (
+                    code        TEXT    PRIMARY KEY,
+                    name        TEXT    NOT NULL,
+                    market      TEXT    NOT NULL,
+                    list_date   TEXT    NOT NULL DEFAULT '2000-01-01',
+                    updated_at  TEXT    NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_info_name ON stock_info(name);
                 """
             )
 
@@ -178,3 +209,149 @@ class MarketStore:
         report["strong_stocks"] = json.loads(report["strong_stocks"])
         report["risk_notes"] = json.loads(report["risk_notes"])
         return report, report["updated_at"], report["source"]
+
+    # =======================================================================
+    # 个股历史行情 — 新增方法
+    # =======================================================================
+
+    def save_history(
+        self,
+        code: str,
+        period: str,
+        adjust: str,
+        candles: list[dict],
+    ) -> None:
+        """
+        将 K 线数据批量写入 stock_history 表。
+
+        candles 中的每条记录应为：
+        { trade_date, open, high, low, close, volume }
+        """
+        if not candles:
+            return
+
+        updated_at = datetime.now().isoformat(timespec="seconds")
+        source = "akshare"
+
+        rows = []
+        for c in candles:
+            rows.append(
+                {
+                    "code": code,
+                    "period": period,
+                    "adjust": adjust,
+                    "trade_date": str(c.get("trade_date", "")),
+                    "open": float(c.get("open", 0)),
+                    "high": float(c.get("high", 0)),
+                    "low": float(c.get("low", 0)),
+                    "close": float(c.get("close", 0)),
+                    "volume": int(c.get("volume", 0)),
+                    "amount": float(c.get("amount", 0)),
+                    "turnover": float(c.get("turnover", 0)),
+                    "updated_at": updated_at,
+                    "source": source,
+                }
+            )
+
+        with self.connect() as conn:
+            conn.executemany(
+                """
+                INSERT OR REPLACE INTO stock_history
+                (code, period, adjust, trade_date, open, high, low, close, volume, amount, turnover, updated_at, source)
+                VALUES
+                (:code, :period, :adjust, :trade_date, :open, :high, :low, :close, :volume, :amount, :turnover, :updated_at, :source)
+                """,
+                rows,
+            )
+
+    def read_history(
+        self,
+        code: str,
+        period: str,
+        adjust: str,
+        start_date: str,
+        end_date: str,
+    ) -> list[dict]:
+        """按时间范围读取个股历史行情"""
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT trade_date, open, high, low, close, volume, amount, turnover
+                FROM stock_history
+                WHERE code = ?
+                  AND period = ?
+                  AND adjust = ?
+                  AND trade_date >= ?
+                  AND trade_date <= ?
+                ORDER BY trade_date ASC
+                """,
+                (code, period, adjust, start_date, end_date),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_stock_name(self, code: str) -> str | None:
+        """从 stock_info 表查询股票名称"""
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT name FROM stock_info WHERE code = ?", (code,)
+            ).fetchone()
+        return row["name"] if row else None
+
+    def all_stock_codes(self) -> list[tuple[str, str]]:
+        """返回全市场股票代码列表 [(code, name), ...]"""
+        with self.connect() as conn:
+            rows = conn.execute(
+                "SELECT code, name FROM stock_info ORDER BY code"
+            ).fetchall()
+        return [(r["code"], r["name"]) for r in rows]
+
+    # =======================================================================
+    # 股票基础信息 — 新增方法
+    # =======================================================================
+
+    def save_stock_info(self, code: str, name: str, market: str) -> None:
+        """写入或更新单条股票基础信息"""
+        updated_at = datetime.now().isoformat(timespec="seconds")
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO stock_info (code, name, market, updated_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (code, name, market, updated_at),
+            )
+
+    def search_stock_info(self, q: str, limit: int = 10) -> list[dict]:
+        """
+        模糊搜索股票代码或名称。
+        支持精确代码匹配和名称模糊匹配。
+        """
+        q_stripped = q.strip()
+
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT code, name, market
+                FROM stock_info
+                WHERE
+                    code = ?
+                    OR code LIKE ?
+                    OR name LIKE ?
+                    OR name LIKE ?
+                ORDER BY
+                    CASE WHEN code = ? THEN 0 ELSE 1 END,
+                    CASE WHEN code LIKE ? THEN 0 ELSE 1 END,
+                    name ASC
+                LIMIT ?
+                """,
+                (
+                    q_stripped,
+                    f"%{q_stripped}%",
+                    f"%{q_stripped}%",
+                    f"%{q_stripped}%",
+                    q_stripped,
+                    f"{q_stripped}%",
+                    limit,
+                ),
+            ).fetchall()
+        return [dict(row) for row in rows]
