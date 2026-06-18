@@ -1287,7 +1287,4 @@ tr:last-child td {
   .statsPanel {
     grid-template-columns: repeat(2, 1fr);
   }
-  .chartCard canvas {
-    height: 280px !important;
-  }
 }

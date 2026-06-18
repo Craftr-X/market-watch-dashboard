@@ -25,6 +25,14 @@ function formatPrice(value: number) {
   return value.toFixed(2);
 }
 
+function formatMarketCap(value: number) {
+  if (value <= 0) return "-";
+  if (value >= 100_000_000_000) return `${(value / 100_000_000_000).toFixed(0)}亿`;
+  if (value >= 100_000_000) return `${(value / 100_000_000).toFixed(1)}亿`;
+  if (value >= 10_000) return `${(value / 10_000).toFixed(0)}万`;
+  return value.toFixed(0);
+}
+
 export default function StockHeader({ code, name, meta }: StockHeaderProps) {
   const pct = meta.latest_change_pct;
 
@@ -43,6 +51,24 @@ export default function StockHeader({ code, name, meta }: StockHeaderProps) {
       </div>
 
       <div className="stockMeta">
+        {meta.industry && (
+          <span className="metaItem">
+            <em>行业</em>
+            <span>{meta.industry}</span>
+          </span>
+        )}
+        {meta.market_cap > 0 && (
+          <span className="metaItem">
+            <em>总市值</em>
+            <span>{formatMarketCap(meta.market_cap)}</span>
+          </span>
+        )}
+        {meta.turnover > 0 && (
+          <span className="metaItem">
+            <em>换手率</em>
+            <span>{meta.turnover.toFixed(2)}%</span>
+          </span>
+        )}
         <span className="metaItem">
           <em>区间</em>
           <span>
