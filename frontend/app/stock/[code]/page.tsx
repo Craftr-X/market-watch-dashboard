@@ -33,9 +33,8 @@ const API_BASE =
     ? process.env.NEXT_PUBLIC_API_BASE ?? "http://127.0.0.1:8000"
     : "http://127.0.0.1:8000");
 
-function StockPageContent() {
+function StockPageContent({ code }: { code: string }) {
   const searchParams = useSearchParams();
-  const code = searchParams.get("code") ?? "600519";
   const initialPeriod = (searchParams.get("period") as Period) ?? "daily";
   const initialAdjust = (searchParams.get("adjust") as Adjust) ?? "qfq";
 
@@ -197,11 +196,12 @@ function StockPageContent() {
   );
 }
 
-/** 包装 Suspense，确保 useSearchParams 正常工作 */
-export default function StockPage() {
+/** 包装 Suspense，确保 useSearchParams 正常工作。
+ *  code 来自动态路由段 [code]（首页/搜索链接均不带 ?code=），不是 query string。 */
+export default function StockPage({ params }: { params: { code: string } }) {
   return (
     <Suspense fallback={<div className="stockPageLoading">加载中…</div>}>
-      <StockPageContent />
+      <StockPageContent code={params.code} />
     </Suspense>
   );
 }

@@ -24,6 +24,9 @@ export interface HistoryMeta {
   total_count: number;
   latest_close: number;
   latest_change_pct: number;
+  industry: string;
+  market_cap: number;
+  turnover: number;
 }
 
 export interface HistoryData {
@@ -60,10 +63,12 @@ export function useStockHistory(
   const [tick, setTick] = useState(0);
 
   const refetch = useCallback(() => setTick((t) => t + 1), []);
+  const reqIdRef = useRef(0);
 
   useEffect(() => {
     if (!code) return;
 
+    const reqId = ++reqIdRef.current;
     setLoading(true);
     setError(null);
 
@@ -82,10 +87,12 @@ export function useStockHistory(
         return res.json();
       })
       .then((json: HistoryResponse) => {
+        if (reqIdRef.current !== reqId) return;
         setData(json.data);
       })
       .catch((err: Error) => {
         clearTimeout(timeout);
+        if (reqIdRef.current !== reqId) return;
         if (err.name === "AbortError") {
           setError("数据获取超时（60秒），请检查网络后重试");
         } else if (err && typeof err === "object" && "detail" in err) {
@@ -102,7 +109,7 @@ export function useStockHistory(
         }
       })
       .finally(() => {
-        setLoading(false);
+        if (reqIdRef.current === reqId) setLoading(false);
       });
 
     return () => {
