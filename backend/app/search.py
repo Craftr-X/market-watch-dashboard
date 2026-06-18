@@ -134,7 +134,7 @@ def sync_stock_info() -> int:
 def ensure_seed_stocks() -> int:
     """
     确保 stock_info 表中至少有种子股票。
-    如果 stock_info 为空，则写入种子数据。
+    如果 stock_info 为空，则批量写入种子数据（单事务 executemany）。
     """
     try:
         from app.storage import MarketStore
@@ -143,8 +143,7 @@ def ensure_seed_stocks() -> int:
         codes = store.all_stock_codes()
         if codes and len(codes) > 0:
             return 0
-        for code, name, market in _SEED_STOCKS:
-            store.save_stock_info(code, name, market)
+        store.save_stock_info_many(_SEED_STOCKS)
         return len(_SEED_STOCKS)
     except Exception:
         return 0
