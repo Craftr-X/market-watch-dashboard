@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from datetime import datetime
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import DISCLAIMER
 from app.data_source import load_market_data
+from app.history import fetch_history, HistoryError, _map_akshare_error
 from app.reporting import build_daily_report, market_temperature
 from app.scheduler import setup_scheduler, shutdown_scheduler
 from app.scoring import score_strong_stocks
+from app.search import search_stocks, ensure_seed_stocks
 from app.storage import MarketStore
 
 
@@ -58,6 +61,10 @@ def create_app(database_url: str | None = None) -> FastAPI:
         allow_headers=["*"],
     )
     store = MarketStore(database_url)
+    # 确保有种子股票数据（断网环境下也能搜索）
+    seed_count = ensure_seed_stocks()
+    if seed_count > 0:
+        print(f"[Startup] 预置 {seed_count} 只种子股票到 stock_info 表")
 
     def ensure_data() -> tuple[str | None, str | None]:
         rows, updated_at, source = store.latest("market_snapshot")
@@ -113,6 +120,50 @@ def create_app(database_url: str | None = None) -> FastAPI:
                 "next_run": str(job.next_run_time) if job.next_run_time else None,
             })
         return {"running": scheduler.running, "jobs": jobs}
+
+    # =======================================================================
+    # 个股历史行情 API — 新增
+    # =======================================================================
+
+    @app.get("/api/stocks/history")
+    def get_stock_history(
+        code: str = Query(..., description="6位股票代码，如 600519"),
+        period: str = Query("daily", description="周期: daily / weekly / monthly"),
+        adjust: str = Query("qfq", description="复权: qfq / none"),
+        start: str | None = Query(None, description="起始日期 YYYY-MM-DD，不传则自动计算"),
+        end: str | None = Query(None, description="结束日期 YYYY-MM-DD，不传则默认今天"),
+    ):
+        """
+        获取个股历史行情（K线数据）
+
+        - 从 SQLite 缓存读取（命中则秒级响应）
+        - 未命中则从 AkShare 拉取并存入缓存
+        - 首次冷启动约需 15~45 秒
+        """
+        try:
+            result = fetch_history(
+                code=code,
+                period=period,   # type: ignore
+                adjust=adjust,   # type: ignore
+                start=start,
+                end=end,
+            )
+            return envelope(result.to_dict(), datetime.now().isoformat(timespec="seconds"), "akshare")
+        except HistoryError as e:
+            raise HTTPException(status_code=e.http_status, detail=e.to_dict())
+
+    @app.get("/api/stocks/search")
+    def search_stocks_api(
+        q: str = Query(..., min_length=1, description="搜索关键词（代码或名称）"),
+        limit: int = Query(10, ge=1, le=50, description="返回条数上限"),
+    ):
+        """股票代码/名称模糊搜索"""
+        items, total = search_stocks(q=q, limit=limit)
+        return envelope(
+            {"items": items, "total": total},
+            datetime.now().isoformat(timespec="seconds"),
+            "akshare",
+        )
 
     return app
 
