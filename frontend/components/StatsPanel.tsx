@@ -30,10 +30,10 @@ export default function StatsPanel({ candles }: StatsPanelProps) {
   const first = candles[0];
   const last = candles[candles.length - 1];
 
-  // 区间涨跌幅
+  // 区间涨跌幅（基准为首日收盘价，非开盘价；至少 2 根 K 线才算）
   const periodChangePct =
-    first.close > 0
-      ? ((last.close - first.open) / first.open) * 100
+    first.close > 0 && candles.length > 1
+      ? ((last.close - first.close) / first.close) * 100
       : 0;
 
   // 期间最高/最低
@@ -72,9 +72,7 @@ export default function StatsPanel({ candles }: StatsPanelProps) {
       </div>
       <div className="statItem">
         <span className="statLabel">最新收盘</span>
-        <strong className={pctClass(last.close - first.close)}>
-          {last.close.toFixed(2)}
-        </strong>
+        <strong>{last.close.toFixed(2)}</strong>
       </div>
     </div>
   );

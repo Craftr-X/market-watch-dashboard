@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import threading
 import time
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from datetime import date, timedelta
 from enum import Enum
 from typing import Literal, Optional
+
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 
@@ -62,9 +64,44 @@ class HistoryResult:
     latest_change_pct: float
     candles: list[dict]
     source: str = "akshare"
+    industry: str = ""
+    market_cap: float = 0.0
+    turnover: float = 0.0
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        # 对齐 PRD §5.3.1 响应契约：
+        #   1) 统计信息收进 meta 嵌套对象（前端用 data.meta.xxx 消费）；
+        #   2) candle 时间字段统一输出为 time。
+        # DB 内部列名仍为 trade_date（见 storage.py 与 PRD §6.1），此处为 API 出口映射，
+        # 是所有数据来源（fetch / 缓存 / 降级 / mock）的唯一序列化边界。
+        candles = [
+            {
+                "time": c.get("time", c.get("trade_date")),
+                "open": c.get("open"),
+                "high": c.get("high"),
+                "low": c.get("low"),
+                "close": c.get("close"),
+                "volume": c.get("volume"),
+            }
+            for c in self.candles
+        ]
+        return {
+            "code": self.code,
+            "name": self.name,
+            "period": self.period,
+            "adjust": self.adjust,
+            "meta": {
+                "start_date": self.start_date,
+                "end_date": self.end_date,
+                "total_count": self.total_count,
+                "latest_close": self.latest_close,
+                "latest_change_pct": self.latest_change_pct,
+                "industry": self.industry,
+                "market_cap": self.market_cap,
+                "turnover": self.turnover,
+            },
+            "candles": candles,
+        }
 
 
 # ============================================================================
@@ -78,9 +115,15 @@ _akshare_lock = threading.Lock()
 # 工具函数
 # ============================================================================
 
+def _today_cn() -> date:
+    """返回北京时间（Asia/Shanghai）的今天日期，避免 UTC 容器丢一天"""
+    from datetime import datetime
+    return datetime.now(ZoneInfo("Asia/Shanghai")).date()
+
+
 def _date_range(period: Period) -> tuple[str, str]:
     """根据周期自动计算回溯起始日期"""
-    today = date.today()
+    today = _today_cn()
     end = today.isoformat()
     if period == "daily":
         start = (today - timedelta(days=365 * 3)).isoformat()
@@ -97,6 +140,44 @@ def _validate_code(code: str) -> str:
     if not (code.isdigit() and len(code) == 6):
         raise HistoryError(HistoryErrorCode.INVALID_CODE)
     return code
+
+
+_VALID_PERIODS = {"daily", "weekly", "monthly"}
+_VALID_ADJUSTS = {"qfq", "none"}
+
+
+def _validate_period(period: str) -> Period:
+    """校验周期参数"""
+    if period not in _VALID_PERIODS:
+        raise HistoryError(HistoryErrorCode.INVALID_CODE)  # 复用 400，消息不够精确但够用
+    return period  # type: ignore
+
+
+def _validate_adjust(adjust: str) -> Adjust:
+    """校验复权参数"""
+    if adjust not in _VALID_ADJUSTS:
+        raise HistoryError(HistoryErrorCode.INVALID_CODE)
+    return adjust  # type: ignore
+
+
+def _validate_date_str(value: str, field_name: str) -> date:
+    """校验日期字符串格式，返回 date 对象"""
+    from datetime import datetime
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        raise HistoryError(HistoryErrorCode.INVALID_CODE) from None
+
+
+def _validate_date_range(start: str, end: str) -> tuple[str, str]:
+    """校验日期范围：格式正确、start <= end、跨度不超过 20 年"""
+    start_dt = _validate_date_str(start, "start")
+    end_dt = _validate_date_str(end, "end")
+    if start_dt > end_dt:
+        raise HistoryError(HistoryErrorCode.INVALID_CODE)
+    if (end_dt - start_dt).days > 365 * 20:
+        raise HistoryError(HistoryErrorCode.INVALID_CODE)
+    return start, end
 
 
 def _normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
@@ -116,9 +197,14 @@ def _normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _market_prefix(code: str) -> str:
-    """根据代码判断市场前缀（sh/sz）"""
+    """根据代码判断市场前缀（sh/sz/bj）"""
+    # 上海：60xxxx（主板）、688xxx（科创板）、5xxxxx（基金）、9xxxxx（B股）、11xxxx（可转债）
     if code.startswith(("6", "5", "9", "11")):
         return "sh"
+    # 北京：8xxxxx（北交所）、43xxxx/44xxxx（新三板）
+    if code.startswith(("8", "43", "44")):
+        return "bj"
+    # 深圳：00xxxx（主板）、300xxx（创业板）、002xxx（中小板）、200xxx（B股）、12xxxx（可转债）
     return "sz"
 
 
@@ -126,7 +212,6 @@ def _market_prefix(code: str) -> str:
 # AkShare 数据拉取
 # ============================================================================
 
-@staticmethod
 def _fetch_from_akshare(code: str, period: Period, adjust: Adjust, start: str, end: str) -> pd.DataFrame:
     """从 AkShare 拉取原始历史数据（延迟导入，避免模块加载时阻塞）"""
     import akshare as ak
@@ -169,9 +254,13 @@ def fetch_history(
     4. 未命中则加全局锁调 AkShare，存入缓存后返回
     """
     code = _validate_code(code)
+    period = _validate_period(period)
+    adjust = _validate_adjust(adjust)
 
     if start is None or end is None:
         start, end = _date_range(period)
+    else:
+        start, end = _validate_date_range(start, end)
 
     # 尝试从缓存读取
     cached = _read_from_cache(code, period, adjust, start, end)
@@ -235,6 +324,9 @@ def fetch_history(
         if prev_close > 0:
             change_pct = round((curr_close - prev_close) / prev_close * 100, 2)
 
+    # 查询行业/市值/换手率等详情
+    details = _get_stock_details(code)
+
     result = HistoryResult(
         code=code,
         name=name or code,
@@ -246,6 +338,9 @@ def fetch_history(
         latest_close=float(latest["close"]),
         latest_change_pct=change_pct,
         candles=candles,
+        industry=details["industry"],
+        market_cap=details["market_cap"],
+        turnover=details["turnover"],
     )
 
     # 存入缓存
@@ -316,6 +411,8 @@ def _read_from_cache(
         first_row = rows[0]
         latest_row = rows[-1]
 
+        details = _get_stock_details(code)
+
         return HistoryResult(
             code=code,
             name=name,
@@ -327,6 +424,9 @@ def _read_from_cache(
             latest_close=float(latest_row.get("close", 0)),
             latest_change_pct=float(latest_row.get("change_pct", 0)),
             candles=rows,
+            industry=details["industry"],
+            market_cap=details["market_cap"],
+            turnover=details["turnover"],
         )
     except Exception:
         return None
@@ -347,22 +447,37 @@ def _save_to_cache(result: HistoryResult) -> None:
 # 缓存预热（供 scheduler 调用）
 # ============================================================================
 
-def refresh_history_cache(period: Period = "daily") -> None:
+def refresh_history_cache(period: Period = "daily", limit: int = 50) -> None:
     """
-    从 stock_info 表读取全市场股票列表，逐只追加今日历史数据。
-    每次只追加当天一根新 K 线，数据量小，不会触发 AkShare 限频。
+    预热 Top N 股票的当日历史数据（默认 50 只）。
+
+    策略：
+    - 只预热评分最高的 Top N 股票，而非全市场 5000+（避免长时间持锁）
+    - 每只之间 sleep 0.5s 以避免触发 AkShare 限频
+    - 批量收集后单事务写入 DB
+    - 带进度和耗时日志
     """
     try:
         from app.storage import MarketStore
 
         store = MarketStore()
-        stock_list = store.all_stock_codes()
+        stock_list = store.top_stock_codes(limit=limit)
+        total = len(stock_list)
 
-        today = date.today().isoformat()
+        if total == 0:
+            print(f"[Cache] {period} 预热跳过：无股票数据（stock_info 为空）")
+            return
 
-        for code, stock_name in stock_list:
+        print(f"[Cache] 开始预热 {period} 缓存，共 {total} 只股票...")
+        start_time = time.monotonic()
+
+        today = _today_cn().isoformat()
+        success_count = 0
+        fail_count = 0
+        all_candles: list[tuple[str, list[dict]]] = []  # (code, candles)
+
+        for i, (code, stock_name) in enumerate(stock_list, 1):
             try:
-                # 只拉今天一天的数据（量小，速度快）
                 rows = _fetch_from_akshare(code, period, "qfq", today, today)
                 if not rows.empty:
                     candles = rows[["trade_date", "open", "high", "low", "close", "volume"]].to_dict(
@@ -372,11 +487,30 @@ def refresh_history_cache(period: Period = "daily") -> None:
                         for key in ["open", "high", "low", "close"]:
                             c[key] = float(c[key])
                         c["volume"] = int(c["volume"])
-                    store.save_history(code, period, "qfq", candles)
-                    print(f"[Cache] {code} {period} 缓存更新成功")
+                    all_candles.append((code, candles))
+                    success_count += 1
+                # 进度日志（每 10 只或最后一只）
+                if i % 10 == 0 or i == total:
+                    elapsed = time.monotonic() - start_time
+                    print(f"[Cache] {period} 进度 {i}/{total}（成功 {success_count}，失败 {fail_count}），耗时 {elapsed:.1f}s")
             except Exception as e:
-                print(f"[Cache] {code} 更新失败: {e}")
-                time.sleep(1)  # 单只失败后稍作停顿，避免雪崩
+                fail_count += 1
+                if i % 10 == 0 or i == total:
+                    elapsed = time.monotonic() - start_time
+                    print(f"[Cache] {period} 进度 {i}/{total}（成功 {success_count}，失败 {fail_count}），耗时 {elapsed:.1f}s")
+                time.sleep(1)  # 失败后多等 1s，避免雪崩
+                continue
+
+            # 正常请求间隔 0.5s，避免触发 AkShare 限频
+            time.sleep(0.5)
+
+        # 批量写入 DB（单事务）
+        if all_candles:
+            for code, candles in all_candles:
+                store.save_history(code, period, "qfq", candles)
+
+        elapsed = time.monotonic() - start_time
+        print(f"[Cache] {period} 预热完成：成功 {success_count}/{total}，失败 {fail_count}，总耗时 {elapsed:.1f}s")
 
     except Exception as e:
         print(f"[Cache] refresh_history_cache 执行失败: {e}")
@@ -392,6 +526,33 @@ def _get_stock_name_from_info(code: str) -> Optional[str]:
         return name
     except Exception:
         return None
+
+
+def _get_stock_details(code: str) -> dict:
+    """从 stock_daily 表查询行业/市值/换手率等详情（取最新一条）"""
+    try:
+        from app.storage import MarketStore
+        store = MarketStore()
+        with store.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT industry, market_cap, turnover
+                FROM stock_daily
+                WHERE code = ?
+                ORDER BY date DESC
+                LIMIT 1
+                """,
+                (code,),
+            ).fetchone()
+        if row:
+            return {
+                "industry": row["industry"] or "",
+                "market_cap": float(row["market_cap"] or 0),
+                "turnover": float(row["turnover"] or 0),
+            }
+    except Exception:
+        pass
+    return {"industry": "", "market_cap": 0.0, "turnover": 0.0}
 
 
 # ============================================================================
@@ -483,6 +644,16 @@ def _fallback_from_stock_daily(
 
         name = _get_stock_name_from_info(code) or code
 
+        # 从 stock_daily 取行业/市值/换手率（如果有）
+        industry = ""
+        market_cap = 0.0
+        turnover_val = 0.0
+        if rows:
+            last_row = rows[-1]
+            industry = last_row["industry"] if "industry" in last_row.keys() else ""
+            market_cap = float(last_row["market_cap"]) if "market_cap" in last_row.keys() else 0.0
+            turnover_val = float(last_row["turnover"]) if "turnover" in last_row.keys() else 0.0
+
         return HistoryResult(
             code=code,
             name=name,
@@ -495,6 +666,9 @@ def _fallback_from_stock_daily(
             latest_change_pct=latest_change_pct,
             candles=candles,
             source="local_fallback",
+            industry=industry,
+            market_cap=market_cap,
+            turnover=turnover_val,
         )
     except Exception:
         return None
@@ -587,6 +761,8 @@ def _mock_seed_candles(code: str, period: Period, start: str, end: str) -> Optio
         last_open = candles[-1]["open"]
         latest_change_pct = round((last_close - last_open) / last_open * 100, 2)
 
+        details = _get_stock_details(code)
+
         return HistoryResult(
             code=code,
             name=name,
@@ -599,6 +775,9 @@ def _mock_seed_candles(code: str, period: Period, start: str, end: str) -> Optio
             latest_change_pct=latest_change_pct,
             candles=candles,
             source="mock_seed",
+            industry=details["industry"],
+            market_cap=details["market_cap"],
+            turnover=details["turnover"],
         )
     except Exception:
         return None
