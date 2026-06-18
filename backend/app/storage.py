@@ -15,7 +15,12 @@ def database_path(database_url: str | None = None) -> Path:
     parsed = urlparse(database_url)
     if parsed.scheme != "sqlite":
         raise ValueError("Only sqlite database URLs are supported")
-    return Path(parsed.path)
+    # Windows 兼容：urlparse 解析 sqlite:///C:/... 会在 path 前加 /
+    # 需要去掉前导斜杠，否则 Windows 路径无效
+    path_str = parsed.path
+    if path_str.startswith("/") and len(path_str) > 1 and path_str[2] == ":":
+        path_str = path_str[1:]  # 去掉前导 /，如 /C:/... → C:/...
+    return Path(path_str)
 
 
 class MarketStore:

@@ -3,8 +3,15 @@ from fastapi.testclient import TestClient
 from app.main import create_app
 
 
+def _make_db_url(tmp_path) -> str:
+    """构造跨平台兼容的 SQLite URL（Windows 路径需特殊处理）"""
+    db_path = tmp_path / "market.db"
+    # Windows 路径需要转换为 POSIX 格式，并确保 URL 格式正确
+    return f"sqlite:///{db_path.as_posix()}"
+
+
 def test_api_responses_include_metadata_and_disclaimer(tmp_path):
-    app = create_app(database_url=f"sqlite:///{tmp_path / 'market.db'}")
+    app = create_app(database_url=_make_db_url(tmp_path))
     client = TestClient(app)
 
     refresh = client.post("/api/jobs/refresh")
@@ -23,7 +30,7 @@ def test_api_responses_include_metadata_and_disclaimer(tmp_path):
 
 
 def test_daily_report_answers_market_learning_questions(tmp_path):
-    app = create_app(database_url=f"sqlite:///{tmp_path / 'market.db'}")
+    app = create_app(database_url=_make_db_url(tmp_path))
     client = TestClient(app)
     client.post("/api/jobs/refresh")
 
