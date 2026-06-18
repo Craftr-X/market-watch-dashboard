@@ -305,6 +305,33 @@ class MarketStore:
             ).fetchall()
         return [(r["code"], r["name"]) for r in rows]
 
+    def top_stock_codes(self, limit: int = 50) -> list[tuple[str, str]]:
+        """返回按最近评分排序的 Top N 股票 [(code, name), ...]，用于缓存预热"""
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT si.code, si.name
+                FROM stock_info si
+                INNER JOIN (
+                    SELECT code, MAX(score) AS max_score
+                    FROM stock_daily
+                    GROUP BY code
+                    ORDER BY max_score DESC
+                    LIMIT ?
+                ) sd ON si.code = sd.code
+                ORDER BY sd.max_score DESC
+                """,
+                (limit,),
+            ).fetchall()
+        # 如果 stock_daily 表为空（冷启动），fallback 到 stock_info 前 N 条
+        if not rows:
+            with self.connect() as conn:
+                rows = conn.execute(
+                    "SELECT code, name FROM stock_info ORDER BY code LIMIT ?",
+                    (limit,),
+                ).fetchall()
+        return [(r["code"], r["name"]) for r in rows]
+
     # =======================================================================
     # 股票基础信息 — 新增方法
     # =======================================================================
@@ -319,6 +346,24 @@ class MarketStore:
                 VALUES (?, ?, ?, ?)
                 """,
                 (code, name, market, updated_at),
+            )
+
+    def save_stock_info_many(self, rows: list[tuple[str, str, str]]) -> None:
+        """
+        批量写入股票基础信息（INSERT OR IGNORE，已存在的不覆盖）。
+        rows: [(code, name, market), ...]，单事务 executemany。
+        """
+        if not rows:
+            return
+        updated_at = datetime.now().isoformat(timespec="seconds")
+        payload = [(code, name, market, updated_at) for code, name, market in rows]
+        with self.connect() as conn:
+            conn.executemany(
+                """
+                INSERT OR IGNORE INTO stock_info (code, name, market, updated_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                payload,
             )
 
     def search_stock_info(self, q: str, limit: int = 10) -> list[dict]:
