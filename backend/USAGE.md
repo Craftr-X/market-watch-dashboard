@@ -110,8 +110,8 @@ scheduler.add_job(
         timezone="Asia/Shanghai",
     ),
     args=[store],
-    id="daily_refresh",
-    name="每日行情刷新",
+    id="daily_snapshot_refresh",
+    name="每日行情快照刷新",
 )
 ```
 

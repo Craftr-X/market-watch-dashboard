@@ -11,7 +11,8 @@ from urllib.parse import quote
 
 BASE = "http://127.0.0.1:8000"
 FRONTEND = "http://localhost:3000"
-DB_PATH = Path("/workspace/data/market_watch.db")
+from app.config import DEFAULT_DB_PATH
+DB_PATH = DEFAULT_DB_PATH
 PASS = "✅ PASS"
 FAIL = "❌ FAIL"
 WARN = "⚠️  WARN"
