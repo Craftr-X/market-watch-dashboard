@@ -45,7 +45,7 @@ function StockPageContent({ code }: { code: string }) {
   );
   const [showSearch, setShowSearch] = useState(false);
 
-  const { data, loading, error, refetch } = useStockHistory(
+  const { data, source, loading, error, refetch } = useStockHistory(
     code,
     period,
     adjust
@@ -115,6 +115,17 @@ function StockPageContent({ code }: { code: string }) {
       <div className="notice">
         <span>本系统仅用于市场学习和行情复盘，不构成投资建议。</span>
       </div>
+
+      {/* ================================================================
+          模拟/降级数据提示
+      ================================================================ */}
+      {source && source !== "akshare" && (
+        <div className="notice warn">
+          <span>
+            ⚠️ 当前展示为{source === "mock_seed" ? "模拟" : "本地降级"}数据，仅供界面预览，非真实行情
+          </span>
+        </div>
+      )}
 
       {/* ================================================================
           加载中状态

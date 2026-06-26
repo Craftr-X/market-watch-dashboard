@@ -76,11 +76,12 @@ def search_stocks(q: str, limit: int = 10) -> tuple[list[SearchResult], int]:
         pass
 
     # ——— 回退：数据库为空时，从内置种子列表匹配 ———
+    from dataclasses import asdict
     lower_q = q.lower()
-    matched = []
+    matched: list[dict] = []
     for code, name, market in _SEED_STOCKS:
         if lower_q in code.lower() or lower_q in name.lower():
-            matched.append(SearchResult(code=code, name=name, market=market))
+            matched.append(asdict(SearchResult(code=code, name=name, market=market)))
             if len(matched) >= limit:
                 break
     return matched, len(matched)

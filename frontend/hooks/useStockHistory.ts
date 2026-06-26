@@ -47,6 +47,8 @@ export interface HistoryResponse {
 
 interface UseStockHistoryReturn {
   data: HistoryData | null;
+  /** 数据来源：akshare（真实）/ mock_seed（模拟）/ local_fallback（本地降级） */
+  source: string | null;
   loading: boolean;
   error: string | null;
   refetch: () => void;
@@ -58,6 +60,7 @@ export function useStockHistory(
   adjust: Adjust = "qfq"
 ): UseStockHistoryReturn {
   const [data, setData] = useState<HistoryData | null>(null);
+  const [source, setSource] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
@@ -89,6 +92,7 @@ export function useStockHistory(
       .then((json: HistoryResponse) => {
         if (reqIdRef.current !== reqId) return;
         setData(json.data);
+        setSource(json.source ?? null);
       })
       .catch((err: Error) => {
         clearTimeout(timeout);
@@ -118,5 +122,5 @@ export function useStockHistory(
     };
   }, [code, period, adjust, tick]);
 
-  return { data, loading, error, refetch };
+  return { data, source, loading, error, refetch };
 }

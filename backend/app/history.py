@@ -135,8 +135,13 @@ def _date_range(period: Period) -> tuple[str, str]:
 
 
 def _validate_code(code: str) -> str:
-    """校验并规范化股票代码"""
+    """校验并规范化股票代码（兼容 sh/sz/bj 前缀）"""
     code = code.strip()
+    # 去除常见市场前缀：sh600519 → 600519
+    for prefix in ("sh", "sz", "bj"):
+        if code.lower().startswith(prefix) and len(code) == len(prefix) + 6:
+            code = code[len(prefix):]
+            break
     if not (code.isdigit() and len(code) == 6):
         raise HistoryError(HistoryErrorCode.INVALID_CODE)
     return code
