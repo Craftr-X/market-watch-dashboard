@@ -2,7 +2,7 @@
  * SearchModal — 股票搜索弹层
  */
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { Search, X } from "lucide-react";
 import { useSearch, SearchItem } from "@/hooks/useSearch";
@@ -14,6 +14,15 @@ interface SearchModalProps {
 export default function SearchModal({ onClose }: SearchModalProps) {
   const [query, setQuery] = useState("");
   const { results, loading } = useSearch(query);
+
+  // 全局 Esc 键关闭（不仅限于 input 聚焦时）
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
 
   return (
     <div className="searchOverlay" onClick={onClose}>
@@ -27,9 +36,7 @@ export default function SearchModal({ onClose }: SearchModalProps) {
             placeholder="输入股票代码或名称，如 600519 / 茅台"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") onClose();
-            }}
+
           />
           {query && (
             <button

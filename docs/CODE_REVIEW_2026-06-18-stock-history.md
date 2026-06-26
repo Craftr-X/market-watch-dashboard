@@ -67,7 +67,12 @@
 | F4 | 🟠Important | 自选股 SSR 水合不匹配 + 订阅整个 store | `watchlist.ts` / `WatchlistButton.tsx` | ✅已验证 | 100% |
 | F5 | 🟠Important | StockHeader 缺 PRD 要求的行业/市值/换手率 | `StockHeader.tsx` | ✅已验证 | 100% |
 | B3 | 🟡Minor | 模块级 `@staticmethod`（潜伏地雷，3.12 下可工作） | `history.py:129` | ✅已验证 | 100% |
-| M-* | 🟡Minor | 见第 5 节 | 多处 | 🔴待修复 | 0% |
+| B11 | 🟡Minor | CORS `https://*.vercel.app` 通配子域无效 | `main.py:58` | ✅已验证 | 100% |
+| B14 | 🟡Minor | SearchResult dataclass JSON 序列化隐患 | `search.py` | ✅已验证 | 100% |
+| B16 | 🟡Minor | mock/fallback 数据前端无"模拟数据"提示 | `history.py` + `page.tsx` | ✅已验证 | 100% |
+| F7 | 🟡Minor | `calcMA` O(n·period) → 滑动窗口 O(n) | `utils/ma.ts` | ✅已验证 | 100% |
+| F9 | 🟡Minor | Esc 仅 input 聚焦时生效 | `SearchModal.tsx` | ✅已验证 | 100% |
+| F10 | 🟡Minor | 网络错误也显示"股票 X 未找到" | `ErrorCard.tsx` | ✅已验证 | 100% |
 
 ---
 
@@ -260,22 +265,22 @@
 
 > 状态默认 🔴待修复，可批量处理。每条给位置即可，不再展开模板。
 
-| ID | 位置 | 问题 | 修法 |
-|---|---|---|---|
-| B3 | `history.py:129` | 模块级 `@staticmethod`（3.12 可用，<3.10 崩，地雷） | ✅删除该装饰器 |
-| B9 | `main.py:11` | import 私有 `_map_akshare_error` 但未使用 | ✅从 import 移除 |
-| B10 | `main.py:53` | 版本号仍 `0.2.0`，README 已写 v0.3.0 | ✅改 `0.3.0` |
-| B11 | `main.py:58` | `https://*.vercel.app` 通配子域，Starlette 不支持 → 既不安全又让真域名跨域失败 | 收敛为真实 Vercel 域名或用 `allow_origin_regex` |
-| B12 | `requirements.txt` | `akshare/apscheduler/pandas` 仅 `>=` 无上限，供应链漂移 | ✅加版本上限 `<N.0.0` |
-| B13 | `acceptance_test.py:14` | 硬编码 `/workspace/data/...`，Windows 跑不通 | ✅从 `app.config.DEFAULT_DB_PATH` 读路径 |
-| B14 | `search.py` `SearchResult` | dataclass 未验证能否 JSON 序列化 | 验证 `/api/stocks/search` 返回，必要时 `asdict` |
-| B15 | `history.py:118-122` | `_market_prefix` 未覆盖科创板688/北交所/B股 | ✅补全北交所(8/43/44→bj)，688已由"6"前缀覆盖 |
-| B16 | `history.py` 降级 | `source=mock_seed` 仍返回 200，前端无"模拟数据"提示 | 前端读 source 打水印，或后端返 203 |
-| F6 | `page.tsx:20,31-34` | 死代码：未用 import 与未用 `API_BASE` | 删除 |
-| F7 | `utils/ma.ts:23-29` | `calcMA` O(n·period)，可改滑动窗口 O(n) | 滑动窗口 + `useMemo` |
-| F8 | `KlineChart.tsx:146` | 均线在 useEffect 内算，非文档承诺的 `useMemo` | 改 `useMemo` |
-| F9 | `SearchModal.tsx:30` | Esc 仅 input 聚焦时生效 | overlay/全局 keydown |
-| F10 | `ErrorCard.tsx:18` | 网络错误也显示"股票 X 未找到" | 区分错误类型 |
+| ID | 位置 | 问题 | 修法 | 状态 |
+|---|---|---|---|---|
+| B3 | `history.py:129` | 模块级 `@staticmethod`（3.12 可用，<3.10 崩，地雷） | ✅删除该装饰器 | ✅已验证 |
+| B9 | `main.py:11` | import 私有 `_map_akshare_error` 但未使用 | ✅从 import 移除 | ✅已验证 |
+| B10 | `main.py:53` | 版本号仍 `0.2.0`，README 已写 v0.3.0 | ✅改 `0.3.0` | ✅已验证 |
+| B11 | `main.py:58` | `https://*.vercel.app` 通配子域，Starlette 不支持 → 既不安全又让真域名跨域失败 | ✅改用 `allow_origin_regex` 正则匹配 | ✅已验证 |
+| B12 | `requirements.txt` | `akshare/apscheduler/pandas` 仅 `>=` 无上限，供应链漂移 | ✅加版本上限 `<N.0.0` | ✅已验证 |
+| B13 | `acceptance_test.py:14` | 硬编码 `/workspace/data/...`，Windows 跑不通 | ✅从 `app.config.DEFAULT_DB_PATH` 读路径 | ✅已验证 |
+| B14 | `search.py` `SearchResult` | dataclass 未验证能否 JSON 序列化 | ✅种子回退改用 `asdict()` 输出 dict | ✅已验证 |
+| B15 | `history.py:118-122` | `_market_prefix` 未覆盖科创板688/北交所/B股 | ✅补全北交所(8/43/44→bj)，688已由"6"前缀覆盖 | ✅已验证 |
+| B16 | `history.py` 降级 | `source=mock_seed` 仍返回 200，前端无"模拟数据"提示 | ✅hook 返回 source + 页面显示降级数据警告 | ✅已验证 |
+| F6 | `page.tsx:20,31-34` | 死代码：未用 import 与未用 `API_BASE` | ✅经核实 `API_BASE` 在 line 75/130 使用，非死代码 | ⏭️跳过 |
+| F7 | `utils/ma.ts:23-29` | `calcMA` O(n·period)，可改滑动窗口 O(n) | ✅改为滑动窗口 O(n) | ✅已验证 |
+| F8 | `KlineChart.tsx:146` | 均线在 useEffect 内算，非文档承诺的 `useMemo` | ⏭️当前 useEffect 依赖 [candles, showMA] 效果等价，改 useMemo 收益极小 | ⏭️跳过 |
+| F9 | `SearchModal.tsx:30` | Esc 仅 input 聚焦时生效 | ✅改为全局 keydown 监听 | ✅已验证 |
+| F10 | `ErrorCard.tsx:18` | 网络错误也显示"股票 X 未找到" | ✅新增 `inferTitle()` 根据错误信息推断标题 | ✅已验证 |
 
 > **注**：B11（CORS）虽在 Minor，但属**遗留问题非本 PR 引入**，仅作提醒。
 
@@ -353,3 +358,10 @@ cd backend && pytest
 - 2026-06-18 | [F5] 🔴→✅ | 后端 HistoryResult 新增 industry/market_cap/turnover（从 stock_daily 取）+ to_dict 输出到 meta；前端 StockHeader 展示（有值才显示） | `npm run build` 通过；29 测试全绿
 - 2026-06-18 | [B3/B9/B10/B15] 🔴→✅ | Minor 批量：删 @staticmethod、移未用 import、版本→0.3.0、_market_prefix 补北交所 | 31 测试全绿
 - 2026-06-18 | [B12/B13] 🔴→✅ | requirements 加版本上限；acceptance_test 改用 app.config.DEFAULT_DB_PATH | 31 测试全绿
+- 2026-06-26 | [B11] 🔴→✅ | CORS `https://*.vercel.app` 改用 `allow_origin_regex=r"https://[a-z0-9\-]+\.vercel\.app"` | 33 测试全绿
+- 2026-06-26 | [B14] 🔴→✅ | search.py 种子回退改用 `asdict(SearchResult(...))` 输出 dict，确保 JSON 序列化 | 33 测试全绿
+- 2026-06-26 | [B16] 🔴→✅ | useStockHistory hook 返回 source 字段；stock/[code]/page.tsx 新增降级数据警告横幅 | `npm run build` 通过
+- 2026-06-26 | [F7] 🔴→✅ | calcMA 改为滑动窗口 O(n)：维护 running sum，消除每步 slice+reduce | `npm run build` 通过
+- 2026-06-26 | [F9] 🔴→✅ | SearchModal 新增全局 keydown 监听 Esc，移除 input 级 onKeyDown | `npm run build` 通过
+- 2026-06-26 | [F10] 🔴→✅ | ErrorCard 新增 inferTitle()：根据错误信息区分"未找到/超时/网络/频繁"等标题 | `npm run build` 通过
+- 2026-06-26 | [F6/F8] ⏭️跳过 | F6 经核实 API_BASE 在 line 75/130 使用非死代码；F8 useEffect 依赖 [candles,showMA] 效果等价 useMemo | —

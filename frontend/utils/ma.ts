@@ -15,16 +15,23 @@ export interface MAVariants {
   ma60: MALine[];
 }
 
-/** 计算单条均线 */
+/** 计算单条均线（滑动窗口 O(n)） */
 export function calcMA(
   candles: Array<{ time: string; close: number }>,
   period: number
 ): MALine[] {
+  if (candles.length < period) return [];
   const result: MALine[] = [];
-  for (let i = period - 1; i < candles.length; i++) {
-    const slice = candles.slice(i - period + 1, i + 1);
-    const avg = slice.reduce((sum, c) => sum + c.close, 0) / period;
-    result.push({ time: candles[i].time, value: parseFloat(avg.toFixed(2)) });
+  let sum = 0;
+  // 初始化窗口
+  for (let i = 0; i < period; i++) {
+    sum += candles[i].close;
+  }
+  result.push({ time: candles[period - 1].time, value: parseFloat((sum / period).toFixed(2)) });
+  // 滑动
+  for (let i = period; i < candles.length; i++) {
+    sum += candles[i].close - candles[i - period].close;
+    result.push({ time: candles[i].time, value: parseFloat((sum / period).toFixed(2)) });
   }
   return result;
 }
